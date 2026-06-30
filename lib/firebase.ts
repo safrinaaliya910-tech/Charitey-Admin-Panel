@@ -4,13 +4,14 @@ import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/fire
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAQIj6th0aijxmeHmzkRGRekZPXhP63C08",
-  authDomain: "charitey-37ce8.firebaseapp.com",
-  projectId: "charitey-37ce8",
-  storageBucket: "charitey-37ce8.firebasestorage.app",
-  messagingSenderId: "49324937832",
-  appId: "1:49324937832:web:2483eb7807d59da3a561dd",
-  measurementId: "G-GG71PRX0JD"
+  // We use `as string` to tell TypeScript "Don't worry, this definitely exists!"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY as string,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN as string,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID as string,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET as string,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID as string,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID as string,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID as string,
 };
 
 // This safely starts Firebase for your web dashboard

@@ -1,218 +1,306 @@
 'use client'
 
-import { useState } from 'react'
-import { LogOut, Lock, Moon, Bell, Eye } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { LogOut, Lock, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { auth, db, app } from '@/lib/firebase' // Make sure app is exported from firebase.ts
+import { 
+  updatePassword, 
+  EmailAuthProvider, 
+  reauthenticateWithCredential,
+  signOut,
+  getAuth,
+  createUserWithEmailAndPassword
+} from 'firebase/auth'
+import { initializeApp, getApps } from 'firebase/app'
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 
 export default function AdminSettings() {
-  const [darkMode, setDarkMode] = useState(false)
-  const [emailNotifications, setEmailNotifications] = useState(true)
-  const [activityFeed, setActivityFeed] = useState(true)
+  const router = useRouter()
+  
+  // Profile States
+  const [adminEmail, setAdminEmail] = useState<string>('Loading...')
+  const [adminName, setAdminName] = useState<string>('Loading...')
+
+  // Security States
   const [showPasswordForm, setShowPasswordForm] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passLoading, setPassLoading] = useState(false)
+  const [passError, setPassError] = useState('')
+  const [passSuccess, setPassSuccess] = useState('')
+
+  // Add Admin States
+  const [newAdminName, setNewAdminName] = useState('')
+  const [newAdminEmail, setNewAdminEmail] = useState('')
+  const [newAdminPassword, setNewAdminPassword] = useState('')
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [adminError, setAdminError] = useState('')
+  const [adminSuccess, setAdminSuccess] = useState('')
+
+  // Fetch current logged-in admin email AND name on mount
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user && user.email) {
+        setAdminEmail(user.email)
+        
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid))
+          if (userDoc.exists() && userDoc.data().name) {
+            setAdminName(userDoc.data().name)
+          } else {
+            setAdminName('Administrator')
+          }
+        } catch (error) {
+          console.error("Error fetching name:", error)
+          setAdminName('Administrator')
+        }
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
+  // 1. Change Password Logic
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPassError('')
+    setPassSuccess('')
+    setPassLoading(true)
+
+    if (newPassword !== confirmPassword) {
+      setPassError("New passwords do not match.")
+      setPassLoading(false)
+      return
+    }
+
+    try {
+      const user = auth.currentUser
+      if (!user || !user.email) throw new Error("No admin is currently logged in.")
+
+      const credential = EmailAuthProvider.credential(user.email, currentPassword)
+      await reauthenticateWithCredential(user, credential)
+      await updatePassword(user, newPassword)
+      
+      setPassSuccess("Password updated successfully!")
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setTimeout(() => { setShowPasswordForm(false); setPassSuccess(''); }, 3000)
+
+    } catch (error: any) {
+      console.error(error)
+      setPassError(error.message || "Failed to update password. Check your current password.")
+    } finally {
+      setPassLoading(false)
+    }
+  }
+
+  // 2. Add New Admin Logic
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAdminError('')
+    setAdminSuccess('')
+    setAdminLoading(true)
+
+    try {
+      // Create secondary Firebase instance to prevent logging current admin out
+      const secondaryApp = getApps().find(a => a.name === 'SecondaryApp') || initializeApp(app.options, 'SecondaryApp')
+      const secondaryAuth = getAuth(secondaryApp)
+
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newAdminEmail, newAdminPassword)
+      const newAdminUid = userCredential.user.uid
+
+      await setDoc(doc(db, 'users', newAdminUid), {
+        name: newAdminName,
+        email: newAdminEmail,
+        role: 'admin',
+        status: 'active',
+        createdAt: serverTimestamp(),
+      })
+
+      await secondaryAuth.signOut()
+
+      setAdminSuccess(`Successfully created admin account for ${newAdminName}!`)
+      setNewAdminName('')
+      setNewAdminEmail('')
+      setNewAdminPassword('')
+
+    } catch (error: any) {
+      console.error(error)
+      setAdminError(error.message || "Failed to create new admin.")
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  // 3. Logout Logic
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+      router.push('/')
+    } catch (error) {
+      console.error("Logout Error:", error)
+    }
+  }
 
   return (
     <div className="space-y-8 max-w-3xl">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-[#2B1B1F]">Charitey Admin Settings</h1>
-        <p className="text-gray-500 mt-1">Manage your admin profile and preferences</p>
+        <h1 className="text-3xl font-bold text-[#2B1B1F]">Settings</h1>
+        <p className="text-gray-500 mt-1">Manage admin access, security, and your session.</p>
       </div>
 
       {/* Account Section */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-6">Account</h2>
-
-        <div className="flex items-center gap-6 pb-6 border-b border-gray-200">
-          <div className="w-16 h-16 bg-gradient-to-br from-[#B76E79] to-[#8E4F5A] rounded-full flex items-center justify-center text-white text-2xl font-bold">
-            AD
+      <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+        <h2 className="text-xl font-bold text-gray-900 mb-6">Current Account</h2>
+        <div className="flex items-center gap-6">
+          <div className="w-16 h-16 bg-gradient-to-br from-[#B76E79] to-[#8E4F5A] rounded-full flex items-center justify-center text-white text-2xl font-bold uppercase tracking-wider">
+            {adminName !== 'Loading...' && adminName !== 'Administrator' ? adminName.substring(0, 2) : 'AD'}
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Admin User</h3>
-            <p className="text-gray-600">admin@charitey.app</p>
-            <p className="text-gray-500 text-sm mt-1">
-              <span className="inline-block px-2 py-1 bg-rose-100 text-[#8E4F5A] rounded text-xs font-semibold">
-                Administrator
-              </span>
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-900 mb-2">Email</label>
-            <input
-              type="email"
-              value="admin@charitey.app"
-              disabled
-              className="w-full px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-900 mb-2">Full Name</label>
-            <input
-              type="text"
-              value="Admin User"
-              disabled
-              className="w-full px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
-            />
+            <h3 className="text-xl font-bold text-gray-900 capitalize">{adminName}</h3>
+            <p className="text-gray-600 font-medium">{adminEmail}</p>
+            <span className="inline-block mt-2 px-3 py-1 bg-rose-100 text-[#8E4F5A] rounded text-xs font-bold uppercase tracking-wide">
+              Active Session
+            </span>
           </div>
         </div>
       </div>
 
-      {/* App Information */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-6">App Information</h2>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Admin Dashboard Version</label>
-            <p className="text-lg font-semibold text-gray-900">v1.0.0</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Last Updated</label>
-            <p className="text-lg font-semibold text-gray-900">January 2024</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Database Backend</label>
-            <p className="text-lg font-semibold text-gray-900">Firebase Firestore</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Environment</label>
-            <p className="text-lg font-semibold text-gray-900">Production</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Preferences */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-6">Preferences</h2>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between py-4 border-b border-gray-200">
-            <div className="flex items-center gap-3">
-              <Moon size={20} className="text-gray-600" />
-              <div>
-                <p className="font-medium text-gray-900">Dark Mode</p>
-                <p className="text-sm text-gray-600">Enable dark theme for the dashboard</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                darkMode ? 'bg-[#B76E79]' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                  darkMode ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between py-4 border-b border-gray-200">
-            <div className="flex items-center gap-3">
-              <Bell size={20} className="text-gray-600" />
-              <div>
-                <p className="font-medium text-gray-900">Email Notifications</p>
-                <p className="text-sm text-gray-600">Receive email alerts for important actions</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setEmailNotifications(!emailNotifications)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                emailNotifications ? 'bg-[#B76E79]' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                  emailNotifications ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center gap-3">
-              <Eye size={20} className="text-gray-600" />
-              <div>
-                <p className="font-medium text-gray-900">Activity Feed</p>
-                <p className="text-sm text-gray-600">Show recent activity on dashboard</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setActivityFeed(!activityFeed)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                activityFeed ? 'bg-[#B76E79]' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                  activityFeed ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Security */}
-      <div className="bg-white rounded-lg shadow p-6">
+      {/* Security / Change Password */}
+      <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Security</h2>
 
-        <button
-          onClick={() => setShowPasswordForm(!showPasswordForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-[#B76E79] text-white rounded-lg hover:bg-[#8E4F5A] transition font-medium"
-        >
-          <Lock size={18} />
-          Change Password
-        </button>
-
-        {showPasswordForm && (
-          <div className="mt-6 space-y-4 p-4 bg-rose-50 rounded-lg">
+        {!showPasswordForm ? (
+          <button
+            onClick={() => setShowPasswordForm(true)}
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#B76E79] text-white rounded-lg hover:bg-[#8E4F5A] transition font-medium"
+          >
+            <Lock size={18} />
+            Change Password
+          </button>
+        ) : (
+          <form onSubmit={handleChangePassword} className="space-y-4 p-5 bg-rose-50/50 border border-rose-100 rounded-lg">
+            {passError && <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-md text-sm font-medium"><AlertCircle size={16}/> {passError}</div>}
+            {passSuccess && <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-md text-sm font-medium"><CheckCircle2 size={16}/> {passSuccess}</div>}
+            
             <div>
-              <label className="block text-sm font-medium text-gray-900 mb-2">Current Password</label>
+              <label htmlFor="currentPass" className="block text-sm font-medium text-gray-900 mb-1">Current Password</label>
               <input
+                id="currentPass"
                 type="password"
+                required
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
                 placeholder="Enter current password"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] text-black"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-900 mb-2">New Password</label>
+              <label htmlFor="newPass" className="block text-sm font-medium text-gray-900 mb-1">New Password</label>
               <input
+                id="newPass"
                 type="password"
-                placeholder="Enter new password"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password (min. 6 characters)"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] text-black"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-900 mb-2">Confirm New Password</label>
+              <label htmlFor="confirmPass" className="block text-sm font-medium text-gray-900 mb-1">Confirm New Password</label>
               <input
+                id="confirmPass"
                 type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirm new password"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] text-black"
               />
             </div>
-            <div className="flex gap-3">
-              <button className="px-4 py-2 bg-[#B76E79] text-white rounded-lg hover:bg-[#8E4F5A] transition font-medium">
-                Update Password
+            <div className="flex gap-3 pt-2">
+              <button type="submit" disabled={passLoading} className="px-5 py-2 bg-[#B76E79] text-white rounded-lg hover:bg-[#8E4F5A] transition font-medium disabled:opacity-50">
+                {passLoading ? 'Updating...' : 'Update Password'}
               </button>
-              <button
-                onClick={() => setShowPasswordForm(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-900 rounded-lg hover:bg-gray-400 transition font-medium"
-              >
+              <button type="button" onClick={() => { setShowPasswordForm(false); setPassError(''); }} className="px-5 py-2 bg-gray-200 text-gray-900 rounded-lg hover:bg-gray-300 transition font-medium">
                 Cancel
               </button>
             </div>
-          </div>
+          </form>
         )}
       </div>
 
+      {/* Add New Admin */}
+      <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+        <div className="flex items-center gap-2 mb-6">
+          <UserPlus className="text-[#8E4F5A]" size={24} />
+          <h2 className="text-xl font-bold text-gray-900">Add New Administrator</h2>
+        </div>
+        
+        <form onSubmit={handleAddAdmin} className="space-y-4">
+          {adminError && <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-md text-sm font-medium"><AlertCircle size={16}/> {adminError}</div>}
+          {adminSuccess && <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-md text-sm font-medium"><CheckCircle2 size={16}/> {adminSuccess}</div>}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="adminName" className="block text-sm font-medium text-gray-900 mb-1">Full Name</label>
+              <input
+                id="adminName"
+                type="text"
+                required
+                value={newAdminName}
+                onChange={(e) => setNewAdminName(e.target.value)}
+                placeholder="E.g., John Doe"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] text-black"
+              />
+            </div>
+            <div>
+              <label htmlFor="adminEmail" className="block text-sm font-medium text-gray-900 mb-1">Email Address</label>
+              <input
+                id="adminEmail"
+                type="email"
+                required
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                placeholder="admin@charitey.app"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] text-black"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label htmlFor="adminPass" className="block text-sm font-medium text-gray-900 mb-1">Temporary Password</label>
+            <input
+              id="adminPass"
+              type="password"
+              required
+              value={newAdminPassword}
+              onChange={(e) => setNewAdminPassword(e.target.value)}
+              placeholder="Assign a secure password"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] text-black"
+            />
+          </div>
+
+          <div className="pt-2">
+            <button type="submit" disabled={adminLoading} className="px-6 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-black transition font-medium disabled:opacity-50">
+              {adminLoading ? 'Creating Admin...' : 'Create Admin Account'}
+            </button>
+          </div>
+        </form>
+      </div>
+
       {/* Logout */}
-      <div className="bg-red-50 rounded-lg border border-red-200 p-6">
-        <h2 className="text-xl font-bold text-red-900 mb-4">Logout</h2>
-        <p className="text-red-800 mb-6">This will end your admin session. Make sure to save any pending changes first.</p>
-        <button className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium">
+      <div className="bg-red-50 rounded-lg border border-red-200 p-6 flex flex-col items-start">
+        <h2 className="text-xl font-bold text-red-900 mb-2">Sign Out</h2>
+        <p className="text-red-800 mb-5">This will end your current administrative session securely.</p>
+        <button 
+          onClick={handleLogout}
+          className="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold tracking-wide"
+        >
           <LogOut size={18} />
           Logout Now
         </button>
