@@ -10,9 +10,9 @@ const navigation = [
   { name: 'Users Management', href: '/admin/users', icon: Users },
   { name: 'Posts/Requests', href: '/admin/posts', icon: FileText },
   { name: 'Donations', href: '/admin/donations', icon: Gift },
-  { name: 'Volunteers', href: '/admin/volunteers', icon: Users2 },
+ 
   { name: 'Messages', href: '/admin/messages', icon: MessageSquare },
-  { name: 'Reports', href: '/admin/reports', icon: AlertCircle },
+  
   { name: 'Announcements', href: '/admin/announcements', icon: Bell },
   { name: 'Audit Logs', href: '/admin/audit-logs', icon: BookOpen },
   { name: 'Travel Agencies', href: '/admin/travel-agencies', icon: Truck },
@@ -87,10 +87,10 @@ export default function AdminLayout({
               />
             </div>
             <div className="flex items-center gap-4">
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition">
-                <User size={20} className="text-gray-600" />
-              </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition">
+              <button aria-label="User Profile" title="User Profile" className="p-2 hover:bg-gray-100 rounded-lg transition">
+  <User size={20} className="text-gray-600" />
+</button>
+<button aria-label="Menu Options" title="Menu Options" className="p-2 hover:bg-gray-100 rounded-lg transition">
                 <Settings size={20} className="text-gray-600" />
               </button>
             </div>
