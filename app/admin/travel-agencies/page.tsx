@@ -1,99 +1,231 @@
 'use client'
 
-import { useState } from 'react'
-import { Truck, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Search, Ban, CheckCircle, ShieldAlert, Star } from 'lucide-react'
+// IMPORTANT: Update this import path to point to your actual Firebase config file
+import { db } from '@/lib/firebase' 
+import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore'
 
-const travelAgencies = [
-  { id: 1, name: 'Express Delivery Co', email: 'contact@expressdelivery.com', phone: '+1-555-1001', status: 'coming_soon', joined: '2024-02-01', coverage: 'City-wide' },
-  { id: 2, name: 'Quick Transport Services', email: 'info@quicktransport.com', phone: '+1-555-1002', status: 'coming_soon', joined: '2024-02-05', coverage: 'Multi-city' },
-]
+// Define the Volunteer type based on your Firestore structure
+interface Volunteer {
+  id: string; // The document ID (uid)
+  uid: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  blocked: boolean;
+  availability?: boolean;
+  rating?: number;
+  totalDeliveries?: number;
+}
 
-export default function TravelAgencies() {
+export default function Volunteers() {
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const filtered = travelAgencies.filter((agency) => {
-    return agency.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           agency.email.toLowerCase().includes(searchTerm.toLowerCase())
+  // Fetch volunteers from Firestore
+  useEffect(() => {
+    const fetchVolunteers = async () => {
+      try {
+        setIsLoading(true)
+        const q = query(collection(db, 'users'), where('role', '==', 'volunteer'))
+        const snapshot = await getDocs(q)
+        
+        const volunteersData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Volunteer[]
+
+        setVolunteers(volunteersData)
+      } catch (err) {
+        console.error('Error fetching volunteers:', err)
+        setError('Failed to load volunteers. Please check your connection.')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchVolunteers()
+  }, [])
+
+  // Handle blocking/unblocking a volunteer
+  const toggleBlockStatus = async (volunteerId: string, currentBlockedStatus: boolean) => {
+    // Optimistic UI update for immediate feedback
+    setVolunteers(prev => 
+      prev.map(v => v.id === volunteerId ? { ...v, blocked: !currentBlockedStatus } : v)
+    )
+
+    try {
+      const userRef = doc(db, 'users', volunteerId)
+      await updateDoc(userRef, {
+        blocked: !currentBlockedStatus
+      })
+    } catch (err) {
+      console.error('Error updating block status:', err)
+      // Revert if it fails
+      setVolunteers(prev => 
+        prev.map(v => v.id === volunteerId ? { ...v, blocked: currentBlockedStatus } : v)
+      )
+      alert("Failed to update status. Please try again.")
+    }
+  }
+
+  // Filter based on search term
+  const filtered = volunteers.filter((volunteer) => {
+    const search = searchTerm.toLowerCase()
+    return (
+      (volunteer.name?.toLowerCase().includes(search)) ||
+      (volunteer.email?.toLowerCase().includes(search)) ||
+      (volunteer.phone?.includes(search))
+    )
   })
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-[#2B1B1F]">Travel Agencies</h1>
-        <p className="text-gray-500 mt-1">Manage delivery partners for NGOs without volunteer support</p>
-      </div>
-
-      {/* Coming Soon Banner */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 flex items-start gap-4">
-        <AlertCircle className="text-yellow-600 mt-1 flex-shrink-0" size={24} />
-        <div>
-          <h3 className="text-lg font-semibold text-yellow-900 mb-2">Coming Soon</h3>
-          <p className="text-sm text-yellow-800 mb-3">
-            The Travel Agencies module is currently in development. This will allow NGOs without volunteer networks to coordinate deliveries through partner transportation services.
-          </p>
-          <div className="space-y-2 text-sm text-yellow-800">
-            <p><strong>Planned Features:</strong></p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Partner agency registration and verification</li>
-              <li>Delivery request assignment and tracking</li>
-              <li>Cost management and billing integration</li>
-              <li>Real-time delivery status updates</li>
-              <li>Rating and review system for agencies</li>
-            </ul>
-          </div>
-        </div>
+        <h1 className="text-3xl font-bold text-[#2B1B1F]">Volunteers</h1>
+        <p className="text-gray-500 mt-1">Manage delivery partners and their access to the platform</p>
       </div>
 
       {/* Search */}
       <div className="flex gap-4 flex-wrap">
-        <input
-          type="text"
-          placeholder="Search agencies..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          disabled
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] flex-1 min-w-64 opacity-50"
-        />
+        <div className="relative flex-1 min-w-64">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <input
+            type="text"
+            placeholder="Search by name, email, or phone..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
+          />
+        </div>
       </div>
 
-      {/* Placeholder Table */}
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
+          <ShieldAlert size={20} />
+          <p>{error}</p>
+        </div>
+      )}
+
+      {/* Data Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Agency Name</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Email</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Phone</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Volunteer Name</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Contact Info</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Stats</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Coverage</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Account</th>
+                <th className="px-6 py-4 text-right text-sm font-semibold text-gray-900">Actions</th>
               </tr>
             </thead>
+            
             <tbody className="divide-y divide-gray-200">
-              {filtered.map((agency) => (
-                <tr key={agency.id} className="hover:bg-gray-50 transition opacity-50">
-                  <td className="px-6 py-4 text-sm text-gray-900 font-medium">{agency.name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{agency.email}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{agency.phone}</td>
-                  <td className="px-6 py-4">
-                    <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">
-                      Coming Soon
-                    </span>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    Loading volunteers...
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{agency.coverage}</td>
                 </tr>
-              ))}
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    No volunteers found matching your search.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((volunteer) => (
+                  <tr key={volunteer.id} className={`hover:bg-gray-50 transition ${volunteer.blocked ? 'bg-red-50/50' : ''}`}>
+                    
+                    {/* Name */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {volunteer.name || 'N/A'}
+                    </td>
+                    
+                    {/* Contact */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      <div>{volunteer.email}</div>
+                      <div className="text-xs text-gray-500 mt-1">{volunteer.phone || 'No phone'}</div>
+                    </td>
+
+                    {/* Stats */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <Star size={14} className="text-yellow-500 fill-yellow-500" />
+                        <span>{volunteer.rating || 0}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {volunteer.totalDeliveries || 0} deliveries
+                      </div>
+                    </td>
+
+                    {/* Availability Status */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {volunteer.availability ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                          Available
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          <span className="w-1.5 h-1.5 bg-gray-500 rounded-full"></span>
+                          Busy / Offline
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Blocked Status */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {volunteer.blocked ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          Blocked
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          Active
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button
+                        onClick={() => toggleBlockStatus(volunteer.id, volunteer.blocked)}
+                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md border transition-colors ${
+                          volunteer.blocked 
+                            ? 'border-green-200 text-green-700 hover:bg-green-50' 
+                            : 'border-red-200 text-red-700 hover:bg-red-50'
+                        }`}
+                      >
+                        {volunteer.blocked ? (
+                          <>
+                            <CheckCircle size={16} />
+                            Unblock
+                          </>
+                        ) : (
+                          <>
+                            <Ban size={16} />
+                            Block
+                          </>
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Info Card */}
-      <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
-        <p className="text-sm text-[#8E4F5A] font-medium">
-          <strong>Current Workflow:</strong> NGOs without available volunteers currently coordinate deliveries directly with donors through the chat system. Travel Agency integration will streamline this process in a future release.
-        </p>
       </div>
     </div>
   )

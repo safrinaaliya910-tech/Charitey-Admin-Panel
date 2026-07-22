@@ -3,19 +3,32 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, LogOut, User, Settings, LayoutDashboard, Users, FileText, Gift, Users2, MessageSquare, AlertCircle, Bell, BookOpen, Truck } from 'lucide-react'
+import { 
+  Menu, X, LogOut, User, Settings, LayoutDashboard, 
+  Users, FileText, Gift, MessageSquare, Activity, Bell, 
+  BookOpen, Truck, Star, UserCheck, ClipboardList 
+} from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { name: 'Users Management', href: '/admin/users', icon: Users },
+  
+  // --- CORE CONTENT MANAGEMENT ---
   { name: 'Posts/Requests', href: '/admin/posts', icon: FileText },
   { name: 'Donations', href: '/admin/donations', icon: Gift },
- 
-  { name: 'Messages', href: '/admin/messages', icon: MessageSquare },
   
+  // --- VOLUNTEER PANEL SECTIONS ---
+  { name: 'Volunteer Directory', href: '/admin/volunteers', icon: UserCheck },
+  { name: 'Volunteer Requests', href: '/admin/volunteer-requests', icon: ClipboardList },
+  { name: 'Delivery Tracking', href: '/admin/volunteer-deliveries', icon: Truck },
+  
+  // --- COMMUNICATIONS & UTILITIES ---
+  { name: 'Messages', href: '/admin/messages', icon: MessageSquare },
+  // Added Activity Feed below Messages
+  { name: 'Activity Feed', href: '/admin/activity', icon: Activity },
+  { name: 'User Feedbacks', href: '/admin/feedbacks', icon: Star },
   { name: 'Announcements', href: '/admin/announcements', icon: Bell },
   { name: 'Audit Logs', href: '/admin/audit-logs', icon: BookOpen },
-  { name: 'Travel Agencies', href: '/admin/travel-agencies', icon: Truck },
   { name: 'Settings', href: '/admin/settings', icon: Settings },
 ]
 
@@ -39,13 +52,13 @@ export default function AdminLayout({
           {sidebarOpen && <h1 className="text-xl font-bold">Charitey Admin</h1>}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-1 hover:bg-blue-700 rounded transition"
+            className="p-1 hover:bg-white/10 rounded transition"
           >
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
 
-        <nav className="p-4 space-y-2">
+        <nav className="p-4 space-y-2 overflow-y-auto h-[calc(100vh-160px)] custom-scrollbar">
           {navigation.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
             const IconComponent = item.icon
@@ -66,7 +79,7 @@ export default function AdminLayout({
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 border-t border-[#D9A5AD]/30 p-4">
+        <div className="absolute bottom-0 left-0 right-0 border-t border-[#D9A5AD]/30 p-4 bg-gradient-to-b from-transparent to-[#8E4F5A]">
           <button className="flex items-center gap-3 px-4 py-3 rounded-lg w-full hover:bg-white/10 transition">
             <LogOut size={20} />
             {sidebarOpen && <span className="text-sm font-medium">Logout</span>}
@@ -88,9 +101,9 @@ export default function AdminLayout({
             </div>
             <div className="flex items-center gap-4">
               <button aria-label="User Profile" title="User Profile" className="p-2 hover:bg-gray-100 rounded-lg transition">
-  <User size={20} className="text-gray-600" />
-</button>
-<button aria-label="Menu Options" title="Menu Options" className="p-2 hover:bg-gray-100 rounded-lg transition">
+                <User size={20} className="text-gray-600" />
+              </button>
+              <button aria-label="Menu Options" title="Menu Options" className="p-2 hover:bg-gray-100 rounded-lg transition">
                 <Settings size={20} className="text-gray-600" />
               </button>
             </div>

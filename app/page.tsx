@@ -20,18 +20,35 @@ export default function HomeLogin() {
     setError("");
 
     try {
+      // 1. Log in via Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      
+      // 2. Fetch the user document from Firestore
       const userDocSnap = await getDoc(doc(db, "users", user.uid));
 
-      if (userDocSnap.exists() && userDocSnap.data().role === "admin") {
-        router.push("/admin"); 
-      } else {
+      // 👇 NEW: DIAGNOSTIC CHECKS 👇
+      if (!userDocSnap.exists()) {
         await auth.signOut();
-        setError("Access Denied: You are not an admin.");
+        setError(`Diagnostic Error: No document found matching UID: ${user.uid}. Check for accidental spaces in your Firestore Document ID!`);
+        return;
       }
+
+      const userData = userDocSnap.data();
+      
+      if (userData.role !== "admin") {
+        await auth.signOut();
+        setError(`Diagnostic Error: Your role is currently set to '${userData.role}'. Ensure it says exactly 'admin' with no spaces.`);
+        return;
+      }
+
+      // If it passes both checks, log them in!
+      router.push("/admin"); 
+
     } catch (err: any) {
-      setError("Invalid email or password.");
+      console.error("Login Error:", err);
+      // 👇 FIXED: Stop masking the error! This will print actual Firebase permission errors to your screen.
+      setError(err.message || "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
     }
@@ -54,6 +71,8 @@ export default function HomeLogin() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow-xl sm:rounded-lg sm:px-10 border border-gray-100">
           <form className="space-y-6" onSubmit={handleLogin}>
+            
+            {/* Error Message Box */}
             {error && (
               <div className="bg-red-50 text-red-600 px-4 py-3 rounded-md text-sm border border-red-200">
                 {error}
@@ -64,18 +83,18 @@ export default function HomeLogin() {
               <label className="block text-sm font-medium text-gray-700">Email address</label>
               <div className="mt-1">
                 <input 
-  id="email"
-  name="email"
-  type="email" 
-  aria-label="Email address"
-  title="Email address"
-  placeholder="Email address"
-  autoComplete="email"
-  required
-  value={email}
-  onChange={(e) => setEmail(e.target.value)}
-  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#8E4F5A] focus:border-[#8E4F5A] sm:text-sm text-black"
-/>
+                  id="email"
+                  name="email"
+                  type="email" 
+                  aria-label="Email address"
+                  title="Email address"
+                  placeholder="Email address"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#8E4F5A] focus:border-[#8E4F5A] sm:text-sm text-black"
+                />
               </div>
             </div>
 
@@ -83,18 +102,18 @@ export default function HomeLogin() {
               <label className="block text-sm font-medium text-gray-700">Password</label>
               <div className="mt-1">
                 <input
-  id="password"
-  name="password"
-  type="password"
-  aria-label="Password"
-  title="Password"
-  placeholder="Password"
-  autoComplete="current-password"
-  required
-  value={password}
-  onChange={(e) => setPassword(e.target.value)}
-  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#8E4F5A] focus:border-[#8E4F5A] sm:text-sm text-black"
-/>
+                  id="password"
+                  name="password"
+                  type="password"
+                  aria-label="Password"
+                  title="Password"
+                  placeholder="Password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#8E4F5A] focus:border-[#8E4F5A] sm:text-sm text-black"
+                />
               </div>
             </div>
 
