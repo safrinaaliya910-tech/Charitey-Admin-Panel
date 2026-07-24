@@ -14,6 +14,7 @@ interface Volunteer {
   role: string;
   location: string;
   license: string;
+  profession?: string; // Added this field
   deliveriesCompleted: number;
   blocked?: boolean; // Optional, defaults to false if not set
 }
@@ -77,6 +78,7 @@ export default function VolunteerDirectory() {
           <thead className="bg-gray-50 border-b">
             <tr>
               <th className="px-6 py-4 font-semibold text-gray-900 text-sm">Volunteer Info</th>
+              <th className="px-6 py-4 font-semibold text-gray-900 text-sm">Profession</th>
               <th className="px-6 py-4 font-semibold text-gray-900 text-sm">Location / License</th>
               <th className="px-6 py-4 font-semibold text-gray-900 text-sm">Deliveries</th>
               <th className="px-6 py-4 font-semibold text-gray-900 text-sm">Status</th>
@@ -84,13 +86,16 @@ export default function VolunteerDirectory() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {isLoading ? <tr><td colSpan={5} className="p-6 text-center text-gray-500">Loading...</td></tr> : 
+            {isLoading ? <tr><td colSpan={6} className="p-6 text-center text-gray-500">Loading...</td></tr> : 
              filtered.map((vol) => (
               <tr key={vol.id} className={vol.blocked ? 'bg-red-50/50' : 'hover:bg-gray-50'}>
                 <td className="px-6 py-4">
                   <div className="font-medium text-gray-900">{vol.name}</div>
                   <div className="text-sm text-gray-500">{vol.email}</div>
                   <div className="text-sm text-gray-500">{vol.phone}</div>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-600 capitalize">
+                  {vol.profession || 'N/A'}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">
                   <div className="flex items-center gap-1"><MapPin size={14}/> {vol.location || 'N/A'}</div>
