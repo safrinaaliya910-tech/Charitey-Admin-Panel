@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Eye, Trash2, Download, Ban, RotateCcw, CheckCircle } from 'lucide-react'
+import { Eye, Trash2, Download, Ban, RotateCcw, CheckCircle, FileText } from 'lucide-react'
 import Modal from '@/components/admin/Modal'
 import ConfirmationDialog from '@/components/admin/ConfirmationDialog'
 import { exportUsersCSV } from '@/lib/admin/csv-export'
@@ -17,17 +17,19 @@ const statusColors = {
   rejected: 'bg-red-100 text-red-800',
 }
 
+const VERIFIABLE_ROLES = ['ngo', 'volunteer']
+
 export default function UsersManagement() {
   const [usersList, setUsersList] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  
+
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
-  
+
   const [selectedUser, setSelectedUser] = useState<any>(null)
   const [showModal, setShowModal] = useState(false)
-  
+
   const [showConfirm, setShowConfirm] = useState(false)
   const [confirmAction, setConfirmAction] = useState<string>('')
   const [userToActOn, setUserToActOn] = useState<any>(null)
@@ -48,12 +50,14 @@ export default function UsersManagement() {
           email: data.email || 'No email',
           phone: data.phone || 'No phone',
           role: (data.role || 'donor').toLowerCase(),
-          // The logic that defaults missing statuses to pending/active
-          status: (data.status || (data.role?.toLowerCase() === 'ngo' ? 'pending' : 'active')).toLowerCase(),
+          status: (
+            data.status ||
+            (VERIFIABLE_ROLES.includes((data.role || '').toLowerCase()) ? 'pending' : 'active')
+          ).toLowerCase(),
           joined: data.createdAt ? new Date(data.createdAt).toLocaleDateString() : 'Unknown Date',
-          // 👇 NEW: Exactly matching your Firebase fields 👇
           license: data.license || 'Not provided',
           location: data.location || 'Not provided',
+          licenseDocumentUrl: data.licenseDocumentUrl || null,
         }
       });
       setUsersList(fetchedUsers);
@@ -70,42 +74,44 @@ export default function UsersManagement() {
     setShowConfirm(true);
   }
 
-  // INSIDE executeAction:
-const executeAction = async () => {
-  if (!userToActOn) return;
-  
-  let newStatus = '';
-  if (confirmAction === 'approve') newStatus = 'approved';
-  if (confirmAction === 'reject') newStatus = 'rejected';
-  if (confirmAction === 'block') newStatus = 'blocked';
-  if (confirmAction === 'unblock') {
-    newStatus = userToActOn.role === 'ngo' ? 'approved' : 'active'; 
+  const executeAction = async () => {
+    if (!userToActOn) return;
+
+    let newStatus = '';
+    if (confirmAction === 'approve') newStatus = 'approved';
+    if (confirmAction === 'reject') newStatus = 'rejected';
+    if (confirmAction === 'block') newStatus = 'blocked';
+    if (confirmAction === 'unblock') {
+      newStatus = VERIFIABLE_ROLES.includes(userToActOn.role) ? 'approved' : 'active';
+    }
+
+    try {
+      const userRef = doc(db, 'users', userToActOn.id);
+      await updateDoc(userRef, { status: newStatus });
+
+      await logAdminAction(
+        "Admin User",
+        `${confirmAction.charAt(0).toUpperCase() + confirmAction.slice(1)} User`,
+        `Changed status of ${userToActOn.name} to ${newStatus}`
+      );
+
+      setUsersList(prev => prev.map(u =>
+        u.id === userToActOn.id ? { ...u, status: newStatus } : u
+      ));
+    } catch (error) {
+      console.error("Error updating user status:", error);
+    } finally {
+      setShowConfirm(false);
+      setUserToActOn(null);
+    }
   }
 
-  try {
-    const userRef = doc(db, 'users', userToActOn.id);
-    await updateDoc(userRef, { status: newStatus });
-    
-    // ADD THIS LOG
-    await logAdminAction(
-      "Admin User", 
-      `${confirmAction.charAt(0).toUpperCase() + confirmAction.slice(1)} User`, 
-      `Changed status of ${userToActOn.name} to ${newStatus}`
-    );
-    
-    setUsersList(prev => prev.map(u => 
-      u.id === userToActOn.id ? { ...u, status: newStatus } : u
-    ));
-  } catch (error) {
-    console.error("Error updating user status:", error);
-  } finally {
-    setShowConfirm(false);
-    setUserToActOn(null);
+  const openDocument = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
-}
 
   const filtered = usersList.filter((user) => {
-    const matchSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const matchSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                         user.email.toLowerCase().includes(searchTerm.toLowerCase())
     const matchRole = filterRole === 'all' || user.role === filterRole.toLowerCase()
     const matchStatus = filterStatus === 'all' || user.status === filterStatus.toLowerCase()
@@ -129,8 +135,6 @@ const executeAction = async () => {
         </button>
       </div>
 
-      
-
       <div className="flex gap-4 flex-wrap">
         <input
           type="text"
@@ -140,25 +144,25 @@ const executeAction = async () => {
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79] flex-1 min-w-64"
         />
         <select
-  aria-label="Filter by Role"
-  title="Filter by Role"
-  value={filterRole}
-  onChange={(e) => setFilterRole(e.target.value)}
-  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
->
-  <option value="all">All Roles</option>
-  <option value="ngo">NGO</option>
-  <option value="donor">Donor</option>
-  <option value="volunteer">Volunteer</option>
-</select>
+          aria-label="Filter by Role"
+          title="Filter by Role"
+          value={filterRole}
+          onChange={(e) => setFilterRole(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
+        >
+          <option value="all">All Roles</option>
+          <option value="ngo">NGO</option>
+          <option value="donor">Donor</option>
+          <option value="volunteer">Volunteer</option>
+        </select>
 
-<select
-  aria-label="Filter by Status"
-  title="Filter by Status"
-  value={filterStatus}
-  onChange={(e) => setFilterStatus(e.target.value)}
-  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
->
+        <select
+          aria-label="Filter by Status"
+          title="Filter by Status"
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
+        >
           <option value="all">All Status</option>
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
@@ -178,15 +182,16 @@ const executeAction = async () => {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Phone</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Role</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Document</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Joined</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {isLoading ? (
-                 <tr><td colSpan={7} className="px-6 py-8 text-center text-[#8E4F5A] font-bold animate-pulse">Loading users from database...</td></tr>
+                <tr><td colSpan={8} className="px-6 py-8 text-center text-[#8E4F5A] font-bold animate-pulse">Loading users from database...</td></tr>
               ) : filtered.length === 0 ? (
-                 <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">No users found.</td></tr>
+                <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No users found.</td></tr>
               ) : (
                 filtered.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-50 transition">
@@ -199,26 +204,52 @@ const executeAction = async () => {
                         {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-sm">
+                      {VERIFIABLE_ROLES.includes(user.role) ? (
+                        user.licenseDocumentUrl ? (
+                          <button
+                            onClick={() => openDocument(user.licenseDocumentUrl)}
+                            className="inline-flex items-center gap-1.5 text-[#B76E79] hover:text-[#8E4F5A] font-medium underline underline-offset-2"
+                            title="Open uploaded license PDF in a new tab"
+                          >
+                            <FileText size={16} />
+                            View PDF
+                          </button>
+                        ) : (
+                          <span className="text-gray-400 italic">Not uploaded</span>
+                        )
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{user.joined}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <button 
+                        <button
                           onClick={() => {
                             setSelectedUser(user)
                             setShowModal(true)
                           }}
-                          className="p-2 hover:bg-rose-100 rounded transition text-[#B76E79]" 
+                          className="p-2 hover:bg-rose-100 rounded transition text-[#B76E79]"
                           title="View Details"
                         >
                           <Eye size={18} />
                         </button>
 
-                        {user.role === 'ngo' && user.status === 'pending' && (
+                        {VERIFIABLE_ROLES.includes(user.role) && user.status === 'pending' && (
                           <>
-                            <button onClick={() => handleActionClick(user, 'approve')} className="p-2 hover:bg-green-100 rounded transition text-green-600" title="Approve NGO">
+                            <button
+                              onClick={() => handleActionClick(user, 'approve')}
+                              className="p-2 hover:bg-green-100 rounded transition text-green-600"
+                              title={`Approve ${user.role === 'ngo' ? 'NGO' : 'Volunteer'}`}
+                            >
                               <CheckCircle size={18} />
                             </button>
-                            <button onClick={() => handleActionClick(user, 'reject')} className="p-2 hover:bg-red-100 rounded transition text-red-600" title="Reject NGO">
+                            <button
+                              onClick={() => handleActionClick(user, 'reject')}
+                              className="p-2 hover:bg-red-100 rounded transition text-red-600"
+                              title={`Reject ${user.role === 'ngo' ? 'NGO' : 'Volunteer'}`}
+                            >
                               <Trash2 size={18} />
                             </button>
                           </>
@@ -250,9 +281,9 @@ const executeAction = async () => {
         )}
       </div>
 
-      <Modal 
-        isOpen={showModal} 
-        onClose={() => setShowModal(false)} 
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
         title={selectedUser?.name || 'User Details'}
         size="lg"
       >
@@ -281,22 +312,37 @@ const executeAction = async () => {
                 <p className="text-sm text-gray-500 font-medium">Joined</p>
                 <p className="text-gray-900">{selectedUser.joined}</p>
               </div>
-              
-              {/* 👇 FIXED: Now looks specifically for 'license' 👇 */}
-              {selectedUser.role === 'ngo' && (
+
+              {VERIFIABLE_ROLES.includes(selectedUser.role) && (
                 <div>
-                  <p className="text-sm text-gray-500 font-medium">License / Registration ID</p>
-                  <p className="text-gray-900 font-semibold text-[#B76E79]">{selectedUser.license}</p>
+                  <p className="text-sm text-gray-500 font-medium">
+                    {selectedUser.role === 'ngo' ? 'License / Registration ID' : 'Driving License ID'}
+                  </p>
+                  <p className="font-semibold text-[#B76E79]">{selectedUser.license}</p>
                 </div>
               )}
             </div>
-            
-            {/* 👇 FIXED: Now looks specifically for 'location' 👇 */}
-            {selectedUser.role === 'ngo' && (
+
+            {VERIFIABLE_ROLES.includes(selectedUser.role) && (
               <>
                 <div>
                   <p className="text-sm text-gray-500 font-medium">Location</p>
                   <p className="text-gray-900">{selectedUser.location}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500 font-medium mb-2">Verification Document</p>
+                  {selectedUser.licenseDocumentUrl ? (
+                    <button
+                      onClick={() => openDocument(selectedUser.licenseDocumentUrl)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 text-[#B76E79] rounded-lg hover:bg-rose-100 transition font-medium"
+                    >
+                      <FileText size={18} />
+                      Open Uploaded PDF
+                    </button>
+                  ) : (
+                    <p className="text-gray-400 italic">No document uploaded yet.</p>
+                  )}
                 </div>
               </>
             )}
