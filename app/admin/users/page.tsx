@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Eye, Trash2, Download, Ban, RotateCcw, CheckCircle, FileText } from 'lucide-react'
+import { Eye, Trash2, Download, Ban, RotateCcw, CheckCircle, FileText, X } from 'lucide-react'
 import Modal from '@/components/admin/Modal'
 import ConfirmationDialog from '@/components/admin/ConfirmationDialog'
 import { exportUsersCSV } from '@/lib/admin/csv-export'
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore'
-import { auth, db } from "@/lib/firebase"; 
-import { logAdminAction } from '@/lib/firebase';
+import { auth, db } from "@/lib/firebase"
+import { logAdminAction } from '@/lib/firebase'
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -34,15 +34,18 @@ export default function UsersManagement() {
   const [confirmAction, setConfirmAction] = useState<string>('')
   const [userToActOn, setUserToActOn] = useState<any>(null)
 
+  const [showDocViewer, setShowDocViewer] = useState(false)
+  const [docViewerUser, setDocViewerUser] = useState<any>(null)
+
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    fetchUsers()
+  }, [])
 
   const fetchUsers = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'users'));
+      const snapshot = await getDocs(collection(db, 'users'))
       const fetchedUsers = snapshot.docs.map(doc => {
-        const data = doc.data();
+        const data = doc.data()
         return {
           id: doc.id,
           ...data,
@@ -59,55 +62,61 @@ export default function UsersManagement() {
           location: data.location || 'Not provided',
           licenseDocumentUrl: data.licenseDocumentUrl || null,
         }
-      });
-      setUsersList(fetchedUsers);
+      })
+      setUsersList(fetchedUsers)
     } catch (error) {
-      console.error("Error fetching users:", error);
+      console.error("Error fetching users:", error)
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
   }
 
   const handleActionClick = (user: any, action: string) => {
-    setUserToActOn(user);
-    setConfirmAction(action);
-    setShowConfirm(true);
+    setUserToActOn(user)
+    setConfirmAction(action)
+    setShowConfirm(true)
   }
 
   const executeAction = async () => {
-    if (!userToActOn) return;
+    if (!userToActOn) return
 
-    let newStatus = '';
-    if (confirmAction === 'approve') newStatus = 'approved';
-    if (confirmAction === 'reject') newStatus = 'rejected';
-    if (confirmAction === 'block') newStatus = 'blocked';
+    let newStatus = ''
+    if (confirmAction === 'approve') newStatus = 'approved'
+    if (confirmAction === 'reject') newStatus = 'rejected'
+    if (confirmAction === 'block') newStatus = 'blocked'
     if (confirmAction === 'unblock') {
-      newStatus = VERIFIABLE_ROLES.includes(userToActOn.role) ? 'approved' : 'active';
+      newStatus = VERIFIABLE_ROLES.includes(userToActOn.role) ? 'approved' : 'active'
     }
 
     try {
-      const userRef = doc(db, 'users', userToActOn.id);
-      await updateDoc(userRef, { status: newStatus });
+      const userRef = doc(db, 'users', userToActOn.id)
+      await updateDoc(userRef, { status: newStatus })
 
       await logAdminAction(
         "Admin User",
         `${confirmAction.charAt(0).toUpperCase() + confirmAction.slice(1)} User`,
         `Changed status of ${userToActOn.name} to ${newStatus}`
-      );
+      )
 
       setUsersList(prev => prev.map(u =>
         u.id === userToActOn.id ? { ...u, status: newStatus } : u
-      ));
+      ))
     } catch (error) {
-      console.error("Error updating user status:", error);
+      console.error("Error updating user status:", error)
     } finally {
-      setShowConfirm(false);
-      setUserToActOn(null);
+      setShowConfirm(false)
+      setUserToActOn(null)
     }
   }
 
-  const openDocument = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const openDocument = (user: any) => {
+    setDocViewerUser(user)
+    setShowDocViewer(true)
+  }
+
+  const closeDocumentViewer = () => {
+    setShowDocViewer(false)
+    setDocViewerUser(null)
   }
 
   const filtered = usersList.filter((user) => {
@@ -208,9 +217,9 @@ export default function UsersManagement() {
                       {VERIFIABLE_ROLES.includes(user.role) ? (
                         user.licenseDocumentUrl ? (
                           <button
-                            onClick={() => openDocument(user.licenseDocumentUrl)}
+                            onClick={() => openDocument(user)}
                             className="inline-flex items-center gap-1.5 text-[#B76E79] hover:text-[#8E4F5A] font-medium underline underline-offset-2"
-                            title="Open uploaded license PDF in a new tab"
+                            title="View the uploaded license PDF"
                           >
                             <FileText size={16} />
                             View PDF
@@ -334,11 +343,11 @@ export default function UsersManagement() {
                   <p className="text-sm text-gray-500 font-medium mb-2">Verification Document</p>
                   {selectedUser.licenseDocumentUrl ? (
                     <button
-                      onClick={() => openDocument(selectedUser.licenseDocumentUrl)}
+                      onClick={() => openDocument(selectedUser)}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 text-[#B76E79] rounded-lg hover:bg-rose-100 transition font-medium"
                     >
                       <FileText size={18} />
-                      Open Uploaded PDF
+                      View Uploaded PDF
                     </button>
                   ) : (
                     <p className="text-gray-400 italic">No document uploaded yet.</p>
@@ -350,11 +359,88 @@ export default function UsersManagement() {
         )}
       </Modal>
 
+      {showDocViewer && docViewerUser && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={closeDocumentViewer}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col"
+            style={{ height: '85vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-bold text-[#2B1B1F]">
+                  {docViewerUser.name} — Verification Document
+                </h2>
+                <p className="text-sm text-gray-500">
+                  {docViewerUser.role === 'ngo' ? 'NGO License Certificate' : 'Driving License'}
+                  {' — '}
+                  <span className="font-medium text-[#B76E79]">{docViewerUser.license}</span>
+                </p>
+              </div>
+              <button
+                onClick={closeDocumentViewer}
+                className="p-2 hover:bg-gray-100 rounded-full transition text-gray-500"
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 bg-gray-100 overflow-hidden">
+              <iframe
+                src={docViewerUser.licenseDocumentUrl}
+                title="Verification Document Preview"
+                className="w-full h-full border-0"
+              />
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <a
+                href={docViewerUser.licenseDocumentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-[#B76E79] hover:text-[#8E4F5A] underline underline-offset-2 font-medium"
+              >
+                Open in new tab
+              </a>
+
+              {docViewerUser.status === 'pending' && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      handleActionClick(docViewerUser, 'reject')
+                      closeDocumentViewer()
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition font-medium"
+                  >
+                    <Trash2 size={16} />
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleActionClick(docViewerUser, 'approve')
+                      closeDocumentViewer()
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
+                  >
+                    <CheckCircle size={16} />
+                    Approve
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmationDialog
         isOpen={showConfirm}
         onClose={() => {
-          setShowConfirm(false);
-          setUserToActOn(null);
+          setShowConfirm(false)
+          setUserToActOn(null)
         }}
         onConfirm={executeAction}
         title="Confirm Action"

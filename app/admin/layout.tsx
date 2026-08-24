@@ -24,7 +24,7 @@ const navigation = [
   
   // --- COMMUNICATIONS & UTILITIES ---
   { name: 'Messages', href: '/admin/messages', icon: MessageSquare },
-  // Added Activity Feed below Messages
+  { name: 'Notifications', href: '/admin/notifications', icon: Bell }, // ← ADDED
   { name: 'Activity Feed', href: '/admin/activity', icon: Activity },
   { name: 'User Feedbacks', href: '/admin/feedbacks', icon: Star },
   { name: 'Announcements', href: '/admin/announcements', icon: Bell },
