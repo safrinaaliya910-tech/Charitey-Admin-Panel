@@ -1,11 +1,11 @@
-'use client'
+"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase"; 
+import { auth, db, logAdminAction } from "@/lib/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { Building2 } from 'lucide-react';
+import { Building2 } from "lucide-react";
 
 export default function HomeLogin() {
   const [email, setEmail] = useState("");
@@ -20,35 +20,27 @@ export default function HomeLogin() {
     setError("");
 
     try {
-      // 1. Log in via Firebase Auth
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      
-      // 2. Fetch the user document from Firestore
+      const { user } = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
+
       const userDocSnap = await getDoc(doc(db, "users", user.uid));
 
-      // 👇 NEW: DIAGNOSTIC CHECKS 👇
-      if (!userDocSnap.exists()) {
+      if (!userDocSnap.exists() || userDocSnap.data().role !== "admin") {
         await auth.signOut();
-        setError(`Diagnostic Error: No document found matching UID: ${user.uid}. Check for accidental spaces in your Firestore Document ID!`);
+        setError("Invalid credentials or you do not have admin access.");
         return;
       }
 
-      const userData = userDocSnap.data();
-      
-      if (userData.role !== "admin") {
-        await auth.signOut();
-        setError(`Diagnostic Error: Your role is currently set to '${userData.role}'. Ensure it says exactly 'admin' with no spaces.`);
-        return;
-      }
+      const name =
+        (userDocSnap.data().name as string) || user.email || "Admin";
+      await logAdminAction(name, "LOGIN", "Admin signed in to the panel");
 
-      // If it passes both checks, log them in!
-      router.push("/admin"); 
-
-    } catch (err: any) {
-      console.error("Login Error:", err);
-      // 👇 FIXED: Stop masking the error! This will print actual Firebase permission errors to your screen.
-      setError(err.message || "An unexpected error occurred.");
+      router.replace("/admin");
+    } catch {
+      setError("Invalid email or password.");
     } finally {
       setIsLoading(false);
     }
@@ -56,63 +48,63 @@ export default function HomeLogin() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      {/* Centering Wrapper */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
           <div className="w-16 h-16 bg-[#8E4F5A] rounded-full flex items-center justify-center shadow-lg">
             <Building2 className="text-white w-8 h-8" strokeWidth={1.5} />
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Charitey Admin</h2>
-        <p className="mt-2 text-center text-sm text-gray-600">Sign in to access the dashboard</p>
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Fourth Idly Admin
+        </h2>
+        <p className="mt-2 text-center text-sm text-gray-600">
+          Sign in to access the dashboard
+        </p>
       </div>
 
-      {/* The White Card Container */}
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow-xl sm:rounded-lg sm:px-10 border border-gray-100">
           <form className="space-y-6" onSubmit={handleLogin}>
-            
-            {/* Error Message Box */}
             {error && (
               <div className="bg-red-50 text-red-600 px-4 py-3 rounded-md text-sm border border-red-200">
                 {error}
               </div>
             )}
-            
+
             <div>
-              <label className="block text-sm font-medium text-gray-700">Email address</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Email address
+              </label>
               <div className="mt-1">
-                <input 
+                <input
                   id="email"
                   name="email"
-                  type="email" 
-                  aria-label="Email address"
-                  title="Email address"
-                  placeholder="Email address"
+                  type="email"
                   autoComplete="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#8E4F5A] focus:border-[#8E4F5A] sm:text-sm text-black"
+                  placeholder="Email address"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
               <div className="mt-1">
                 <input
                   id="password"
                   name="password"
                   type="password"
-                  aria-label="Password"
-                  title="Password"
-                  placeholder="Password"
                   autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#8E4F5A] focus:border-[#8E4F5A] sm:text-sm text-black"
+                  placeholder="Password"
                 />
               </div>
             </div>
