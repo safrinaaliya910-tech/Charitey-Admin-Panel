@@ -1,33 +1,150 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Megaphone, Plus, Edit2, Trash2, Eye } from 'lucide-react'
 import Modal from '@/components/admin/Modal'
 import ConfirmationDialog from '@/components/admin/ConfirmationDialog'
+import { db } from '@/lib/firebase'
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp,
+  Timestamp,
+} from 'firebase/firestore'
 
-const announcements = [
-  { id: 1, title: 'Welcome to Charitey', content: 'Welcome to our new charity platform. Start making a difference today!', target: 'all', status: 'active', created: '2024-01-15', views: 1250 },
-  { id: 2, title: 'NGO Verification Update', content: 'All NGOs must now provide registration IDs for verification.', target: 'ngo', status: 'active', created: '2024-01-18', views: 890 },
-  { id: 3, title: 'Volunteer Opportunities Available', content: 'New volunteer assignments available. Check the volunteers page!', target: 'volunteer', status: 'active', created: '2024-01-19', views: 450 },
-  { id: 4, title: 'Donation Match Campaign', content: 'Donations are being matched 1:1 this week only!', target: 'donor', status: 'draft', created: '2024-01-20', views: 0 },
-]
+interface Announcement {
+  id: string
+  title: string
+  content: string
+  target: 'all' | 'ngo' | 'donor' | 'volunteer'
+  status: 'active' | 'draft'
+  createdAt?: Timestamp
+ 
+}
+
+function formatCreatedDate(createdAt?: Timestamp) {
+  if (!createdAt) return '—'
+  const d = createdAt.toDate()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 export default function Announcements() {
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterTarget, setFilterTarget] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
   const [showModal, setShowModal] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [selectedAnnouncement, setSelectedAnnouncement] = useState<any>(null)
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Form field state (replaces the old uncontrolled defaultValue inputs,
+  // which had no way to read their current value back out on submit).
+  const [formTitle, setFormTitle] = useState('')
+  const [formContent, setFormContent] = useState('')
+  const [formTarget, setFormTarget] = useState<'all' | 'ngo' | 'donor' | 'volunteer'>('all')
+  const [formStatus, setFormStatus] = useState<'active' | 'draft'>('active')
+
+  // Live feed from Firestore, newest first — replaces the hardcoded mock array.
+  useEffect(() => {
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'))
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Announcement[]
+        setAnnouncements(data)
+        setIsLoading(false)
+      },
+      (err) => {
+        console.error('Error loading announcements:', err)
+        setIsLoading(false)
+      }
+    )
+    return () => unsubscribe()
+  }, [])
+
+  // Populate the form when opening it for Create (blank) or Edit (prefilled).
+  useEffect(() => {
+    if (showForm) {
+      setFormTitle(selectedAnnouncement?.title || '')
+      setFormContent(selectedAnnouncement?.content || '')
+      setFormTarget(selectedAnnouncement?.target || 'all')
+      setFormStatus(selectedAnnouncement?.status || 'active')
+    }
+  }, [showForm, selectedAnnouncement])
 
   const filtered = announcements.filter((ann) => {
-    const matchSearch = ann.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       ann.content.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchSearch =
+      ann.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      ann.content.toLowerCase().includes(searchTerm.toLowerCase())
     const matchTarget = filterTarget === 'all' || ann.target === filterTarget
     const matchStatus = filterStatus === 'all' || ann.status === filterStatus
     return matchSearch && matchTarget && matchStatus
   })
+
+  const handleSave = async () => {
+    if (!formTitle.trim() || !formContent.trim()) {
+      alert('Please fill in both Title and Content.')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      if (selectedAnnouncement) {
+        // Edit: updating `status` to 'active' here is what triggers
+        // onAnnouncementStatusChanged in the Cloud Function if this
+        // announcement was previously a draft.
+        await updateDoc(doc(db, 'announcements', selectedAnnouncement.id), {
+          title: formTitle.trim(),
+          content: formContent.trim(),
+          target: formTarget,
+          status: formStatus,
+        })
+      } else {
+        // Create: writing status: 'active' here is what triggers
+        // onAnnouncementPublished in the Cloud Function immediately.
+        await addDoc(collection(db, 'announcements'), {
+          title: formTitle.trim(),
+          content: formContent.trim(),
+          target: formTarget,
+          status: formStatus,
+         
+          createdAt: serverTimestamp(),
+        })
+      }
+      setShowForm(false)
+      setSelectedAnnouncement(null)
+    } catch (err) {
+      console.error('Error saving announcement:', err)
+      alert('Failed to save announcement.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!selectedAnnouncement) {
+      setShowConfirm(false)
+      return
+    }
+    try {
+      await deleteDoc(doc(db, 'announcements', selectedAnnouncement.id))
+    } catch (err) {
+      console.error('Error deleting announcement:', err)
+      alert('Failed to delete announcement.')
+    } finally {
+      setShowConfirm(false)
+      setSelectedAnnouncement(null)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -64,7 +181,6 @@ export default function Announcements() {
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
         >
           <option value="all">All Users</option>
-          <option value="all">All Users</option>
           <option value="ngo">NGOs Only</option>
           <option value="donor">Donors Only</option>
           <option value="volunteer">Volunteers Only</option>
@@ -89,61 +205,79 @@ export default function Announcements() {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Title</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Target</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Views</th>
+                
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Created</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filtered.map((ann) => (
-                <tr key={ann.id} className="hover:bg-gray-50 transition">
-                  <td className="px-6 py-4 text-sm text-gray-900 font-medium">{ann.title}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{ann.target === 'all' ? 'All Users' : ann.target.charAt(0).toUpperCase() + ann.target.slice(1)}</td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                      ann.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {ann.status.charAt(0).toUpperCase() + ann.status.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600 flex items-center gap-1">
-                    <Eye size={16} className="text-gray-400" />
-                    {ann.views.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{ann.created}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedAnnouncement(ann)
-                          setShowModal(true)
-                        }}
-                        className="p-2 hover:bg-rose-100 rounded transition text-[#B76E79]"
-                        title="View Details"
-                      >
-                        <Eye size={18} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedAnnouncement(ann)
-                          setShowForm(true)
-                        }}
-                        className="p-2 hover:bg-blue-100 rounded transition text-blue-600"
-                        title="Edit"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button
-                        onClick={() => setShowConfirm(true)}
-                        className="p-2 hover:bg-red-100 rounded transition text-red-600"
-                        title="Delete"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="p-6 text-center text-gray-500">
+                    Loading...
                   </td>
                 </tr>
-              ))}
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-6 text-center text-gray-500">
+                    No announcements yet.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((ann) => (
+                  <tr key={ann.id} className="hover:bg-gray-50 transition">
+                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">{ann.title}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {ann.target === 'all' ? 'All Users' : ann.target.charAt(0).toUpperCase() + ann.target.slice(1)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                          ann.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {ann.status.charAt(0).toUpperCase() + ann.status.slice(1)}
+                      </span>
+                    </td>
+                   
+                    <td className="px-6 py-4 text-sm text-gray-600">{formatCreatedDate(ann.createdAt)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedAnnouncement(ann)
+                            setShowModal(true)
+                          }}
+                          className="p-2 hover:bg-rose-100 rounded transition text-[#B76E79]"
+                          title="View Details"
+                        >
+                          <Eye size={18} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedAnnouncement(ann)
+                            setShowForm(true)
+                          }}
+                          className="p-2 hover:bg-blue-100 rounded transition text-blue-600"
+                          title="Edit"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedAnnouncement(ann)
+                            setShowConfirm(true)
+                          }}
+                          className="p-2 hover:bg-red-100 rounded transition text-red-600"
+                          title="Delete"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -165,23 +299,26 @@ export default function Announcements() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-500 font-medium mb-1">Target Audience</p>
-                <p className="text-gray-900">{selectedAnnouncement.target === 'all' ? 'All Users' : selectedAnnouncement.target.charAt(0).toUpperCase() + selectedAnnouncement.target.slice(1)}</p>
+                <p className="text-gray-900">
+                  {selectedAnnouncement.target === 'all'
+                    ? 'All Users'
+                    : selectedAnnouncement.target.charAt(0).toUpperCase() + selectedAnnouncement.target.slice(1)}
+                </p>
               </div>
               <div>
                 <p className="text-sm text-gray-500 font-medium mb-1">Status</p>
-                <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                  selectedAnnouncement.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                }`}>
+                <span
+                  className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                    selectedAnnouncement.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
                   {selectedAnnouncement.status.charAt(0).toUpperCase() + selectedAnnouncement.status.slice(1)}
                 </span>
               </div>
-              <div>
-                <p className="text-sm text-gray-500 font-medium mb-1">Views</p>
-                <p className="text-gray-900">{selectedAnnouncement.views.toLocaleString()}</p>
-              </div>
+              
               <div>
                 <p className="text-sm text-gray-500 font-medium mb-1">Created</p>
-                <p className="text-gray-900">{selectedAnnouncement.created}</p>
+                <p className="text-gray-900">{formatCreatedDate(selectedAnnouncement.createdAt)}</p>
               </div>
             </div>
           </div>
@@ -200,7 +337,8 @@ export default function Announcements() {
             <label className="block text-sm font-medium text-gray-900 mb-2">Title</label>
             <input
               type="text"
-              defaultValue={selectedAnnouncement?.title || ''}
+              value={formTitle}
+              onChange={(e) => setFormTitle(e.target.value)}
               placeholder="Announcement title"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
             />
@@ -208,7 +346,8 @@ export default function Announcements() {
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">Content</label>
             <textarea
-              defaultValue={selectedAnnouncement?.content || ''}
+              value={formContent}
+              onChange={(e) => setFormContent(e.target.value)}
               placeholder="Announcement content..."
               rows={4}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
@@ -217,7 +356,8 @@ export default function Announcements() {
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">Target Audience</label>
             <select
-              defaultValue={selectedAnnouncement?.target || 'all'}
+              value={formTarget}
+              onChange={(e) => setFormTarget(e.target.value as typeof formTarget)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
             >
               <option value="all">All Users</option>
@@ -226,15 +366,31 @@ export default function Announcements() {
               <option value="volunteer">Volunteers Only</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">Status</label>
+            <select
+              value={formStatus}
+              onChange={(e) => setFormStatus(e.target.value as typeof formStatus)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#B76E79]"
+            >
+              <option value="active">Active (publish now — sends notifications immediately)</option>
+              <option value="draft">Draft (save only, don't send yet)</option>
+            </select>
+          </div>
           <div className="flex gap-3 justify-end pt-4">
             <button
               onClick={() => setShowForm(false)}
               className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium text-gray-700"
+              disabled={isSaving}
             >
               Cancel
             </button>
-            <button className="px-4 py-2 bg-[#B76E79] text-white rounded-lg hover:bg-[#8E4F5A] transition font-medium">
-              {selectedAnnouncement ? 'Save Changes' : 'Create Announcement'}
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 bg-[#B76E79] text-white rounded-lg hover:bg-[#8E4F5A] transition font-medium disabled:opacity-60"
+            >
+              {isSaving ? 'Saving...' : selectedAnnouncement ? 'Save Changes' : 'Create Announcement'}
             </button>
           </div>
         </div>
@@ -244,10 +400,7 @@ export default function Announcements() {
       <ConfirmationDialog
         isOpen={showConfirm}
         onClose={() => setShowConfirm(false)}
-        onConfirm={() => {
-          console.log('Announcement deleted')
-          setShowConfirm(false)
-        }}
+        onConfirm={handleDelete}
         title="Delete Announcement"
         message="Are you sure you want to delete this announcement? This action cannot be undone."
         confirmText="Delete"

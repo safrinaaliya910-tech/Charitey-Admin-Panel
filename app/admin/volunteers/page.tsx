@@ -19,6 +19,16 @@ interface Volunteer {
   blocked?: boolean; // Optional, defaults to false if not set
 }
 
+// Must match the Flutter app's `_completedStatuses` set exactly
+// (VolunteerImpactStoryWidget in profile_screen.dart) — otherwise the
+// admin count and the app's own "Total Delivered" count will disagree.
+const COMPLETED_STATUSES = new Set([
+  'delivery_completed',
+  'completed_awaiting_payment',
+  'fully_completed',
+  'completed',
+])
+
 export default function VolunteerDirectory() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -30,7 +40,36 @@ export default function VolunteerDirectory() {
         const q = query(collection(db, 'users'), where('role', '==', 'volunteer'))
         const snapshot = await getDocs(q)
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Volunteer[]
-        setVolunteers(data)
+
+        // The app never writes `deliveriesCompleted` onto the user doc — it
+        // computes the count live from the `donations` collection instead.
+        // So we do the same here, per volunteer, in parallel, and overwrite
+        // whatever (always-stale/zero) value came back on the user doc.
+        const withLiveCounts = await Promise.all(
+          data.map(async (vol) => {
+            const volunteerId = vol.uid || vol.id
+            try {
+              const donationsQ = query(
+                collection(db, 'donations'),
+                where('assignedVolunteerId', '==', volunteerId)
+              )
+              const donationsSnap = await getDocs(donationsQ)
+              const completedCount = donationsSnap.docs.filter((d) => {
+                const status = (d.data().status || '').toString().trim().toLowerCase()
+                return COMPLETED_STATUSES.has(status)
+              }).length
+
+              return { ...vol, deliveriesCompleted: completedCount }
+            } catch (err) {
+              console.error(`Error fetching deliveries for volunteer ${volunteerId}:`, err)
+              // Keep whatever was on the user doc (likely 0/undefined) rather
+              // than failing the whole directory load over one volunteer.
+              return vol
+            }
+          })
+        )
+
+        setVolunteers(withLiveCounts)
       } catch (err) {
         console.error('Error fetching volunteers:', err)
       } finally {
@@ -50,8 +89,8 @@ export default function VolunteerDirectory() {
     }
   }
 
-  const filtered = volunteers.filter(v => 
-    v.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filtered = volunteers.filter(v =>
+    v.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     v.email?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
@@ -64,9 +103,9 @@ export default function VolunteerDirectory() {
 
       <div className="flex bg-white border border-gray-300 rounded-lg px-4 py-2 w-full max-w-md items-center">
         <Search className="text-gray-400 mr-2" size={20} />
-        <input 
-          type="text" 
-          placeholder="Search by name or email..." 
+        <input
+          type="text"
+          placeholder="Search by name or email..."
           className="w-full focus:outline-none"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -86,7 +125,7 @@ export default function VolunteerDirectory() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {isLoading ? <tr><td colSpan={6} className="p-6 text-center text-gray-500">Loading...</td></tr> : 
+            {isLoading ? <tr><td colSpan={6} className="p-6 text-center text-gray-500">Loading...</td></tr> :
              filtered.map((vol) => (
               <tr key={vol.id} className={vol.blocked ? 'bg-red-50/50' : 'hover:bg-gray-50'}>
                 <td className="px-6 py-4">
